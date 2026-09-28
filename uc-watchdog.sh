@@ -8,7 +8,7 @@
 # not hammer the system while the other Mac is asleep.
 #
 # Runs as a per-user LaunchAgent (see install.sh). Needs no root.
-# https://github.com/diegonzn/universal-control-watchdog
+# https://github.com/diegonzn/apple-universal-control-fix
 
 GRACE=${UC_GRACE:-15}
 NOTIFY=${UC_NOTIFY:-1}

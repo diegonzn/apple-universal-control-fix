@@ -1,6 +1,6 @@
-# Universal Control Watchdog for Mac: auto-fix Universal Control disconnects between your MacBook, iMac and other Apple Macs (OpenCore Legacy Patcher friendly)
+# Apple Universal Control Fix: auto-reconnect when Universal Control keeps disconnecting between your MacBook, iMac and other Macs (OpenCore Legacy Patcher friendly)
 
-A small LaunchAgent that watches Universal Control and **automatically reconnects it when the link to your other Mac drops**, for example between an iMac and a MacBook Pro or MacBook Air. No more opening Terminal to run `killall rapportd sharingd` by hand. Plain bash, no dependencies, no root, no kernel extensions.
+`uc-watchdog` is a small LaunchAgent that watches Universal Control and **automatically reconnects it when the link to your other Mac drops**, for example between an iMac and a MacBook Pro or MacBook Air. No more opening Terminal to run `killall rapportd sharingd` by hand. Plain bash, no dependencies, no root, no kernel extensions.
 
 It was built for older Macs running a newer macOS through [OpenCore Legacy Patcher](https://github.com/dortania/OpenCore-Legacy-Patcher) (OCLP), where Universal Control technically works but drops again and again. It should help any Mac with the same symptoms.
 
@@ -40,8 +40,8 @@ Restarting those two daemons by hand works, but you have to notice the drop, ope
 ## Install
 
 ```bash
-git clone https://github.com/diegonzn/universal-control-watchdog.git
-cd universal-control-watchdog
+git clone https://github.com/diegonzn/apple-universal-control-fix.git
+cd apple-universal-control-fix
 ./install.sh
 ```
 
