@@ -1,12 +1,12 @@
-# Universal Control Watchdog: auto-fix for Universal Control disconnects on macOS (OpenCore Legacy Patcher and older Macs)
+# Universal Control Watchdog for Mac: auto-fix Universal Control disconnects between your MacBook, iMac and other Apple Macs (OpenCore Legacy Patcher friendly)
 
-A small LaunchAgent that watches Universal Control and **automatically reconnects it when the link to your other Mac drops**. No more opening Terminal to run `killall rapportd sharingd` by hand. Plain bash, no dependencies, no root, no kernel extensions.
+A small LaunchAgent that watches Universal Control and **automatically reconnects it when the link to your other Mac drops**, for example between an iMac and a MacBook Pro or MacBook Air. No more opening Terminal to run `killall rapportd sharingd` by hand. Plain bash, no dependencies, no root, no kernel extensions.
 
 It was built for older Macs running a newer macOS through [OpenCore Legacy Patcher](https://github.com/dortania/OpenCore-Legacy-Patcher) (OCLP), where Universal Control technically works but drops again and again. It should help any Mac with the same symptoms.
 
 ## Symptoms this fixes
 
-- Universal Control keeps disconnecting; the cursor stops crossing to the other Mac.
+- Universal Control keeps disconnecting; the cursor stops crossing from your iMac or Mac mini to your MacBook, or the other way around.
 - The other Mac disappears from **System Settings > Displays** for a while and then comes back, or does not.
 - It works right after `killall rapportd sharingd` (or a reboot), then drops again minutes or hours later.
 - You use an older Mac (2012 to 2015 era, Bluetooth 4.0) patched with OCLP, paired with a newer Mac.
