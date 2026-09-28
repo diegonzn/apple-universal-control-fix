@@ -24,13 +24,27 @@ if [ -f "$LOG" ] && [ "$(wc -c < "$LOG")" -gt 1048576 ]; then
     tail -n 2000 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
 fi
 
+NOTIFIER="$HOME/.local/share/uc-watchdog/UC Watchdog.app/Contents/MacOS/uc-notify"
+
+# Uses the helper built by install.sh (shows the UC Watchdog icon) if present.
+notify() {
+    [ "$NOTIFY" = 1 ] || return
+    if [ -x "$NOTIFIER" ]; then
+        "$NOTIFIER" "Universal Control" "$1" >/dev/null 2>&1 && return
+    fi
+    osascript -e "display notification \"$1\" with title \"Universal Control\"" >/dev/null 2>&1
+}
+
+# Only the first fix of an outage notifies, plus one heads-up when retries
+# slow down to every 10 min (the other Mac is probably off or asleep).
 fix() {
     killall rapportd sharingd 2>/dev/null
     last_fix=$(date +%s); tries=$((tries + 1))
     log "fix #$tries (down for $((last_fix - down_since))s)"
-    if [ "$NOTIFY" = 1 ]; then
-        osascript -e 'display notification "Connection lost, restarting rapportd/sharingd" with title "Universal Control"' >/dev/null 2>&1
-    fi
+    case $tries in
+        1) notify "Connection lost, reconnecting..." ;;
+        4) notify "Other Mac not responding (off or asleep?). Retrying quietly every 10 min." ;;
+    esac
 }
 
 # log stream feeds a FIFO so we can read with a timeout and still notice if

@@ -5,4 +5,5 @@ LABEL=local.uc-watchdog
 
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null
 rm -f "$HOME/Library/LaunchAgents/$LABEL.plist" "$HOME/.local/bin/uc-watchdog.sh"
+rm -rf "$HOME/.local/share/uc-watchdog"
 echo "[OK] uc-watchdog removed. Logs left in ~/Library/Logs/uc-watchdog.{log,err}"

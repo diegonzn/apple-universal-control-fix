@@ -27,7 +27,7 @@ Restarting those two daemons by hand works, but you have to notice the drop, ope
 - When the connection list goes empty, it starts a timer.
 - If UC reconnects on its own within the **grace period** (15 s by default), it does nothing.
 - If not, it restarts `rapportd` and `sharingd` and shows a notification.
-- If the link is still down, it retries after **1, 2, 5 and then every 10 minutes**, so it does not hammer the system while the other Mac is asleep or away.
+- If the link is still down, it retries after **1, 2, 5 and then every 10 minutes**, so it does not hammer the system while the other Mac is asleep or away. Retries are silent: you get one notification when the link drops and one more if the other Mac still has not answered after about 8 minutes (usually because it is off or asleep).
 - It logs every drop, fix and reconnection with timestamps to `~/Library/Logs/uc-watchdog.log`.
 - launchd starts it at login and restarts it if it ever exits.
 
@@ -45,7 +45,9 @@ cd apple-universal-control-fix
 ./install.sh
 ```
 
-The installer copies the script to `~/.local/bin/uc-watchdog.sh`, installs the LaunchAgent `~/Library/LaunchAgents/local.uc-watchdog.plist` and starts it. It needs no `sudo`. Run `./install.sh` again after changing the script or the settings.
+The installer copies the script to `~/.local/bin/uc-watchdog.sh`, installs the LaunchAgent `~/Library/LaunchAgents/local.uc-watchdog.plist` and starts it. It needs no `sudo`.
+
+It also builds a tiny notification helper, `~/.local/share/uc-watchdog/UC Watchdog.app`, so notifications show the UC Watchdog icon instead of the Script Editor one. This needs `swiftc`, which comes with the Command Line Tools (already there if you have `git`). Without it the watchdog falls back to plain notifications. Run `./install.sh` again after changing the script or the settings.
 
 ## Usage
 
@@ -81,7 +83,7 @@ Edit the `EnvironmentVariables` block in `uc-watchdog.plist`, then run `./instal
 | Variable | Default | Meaning |
 |---|---|---|
 | `UC_GRACE` | `15` | Seconds to wait for UC to recover on its own before restarting the daemons |
-| `UC_NOTIFY` | `1` | `1` shows a notification on each fix, `0` stays silent |
+| `UC_NOTIFY` | `1` | `1` notifies when the link drops and once more if it stays down, `0` stays silent |
 | `UC_LOG` | `~/Library/Logs/uc-watchdog.log` | Log file path |
 
 About `UC_GRACE`: in real use, drops that recover on their own did so in 1 to 14 s. A lower value restarts daemons that did not need it; a higher one makes every real drop last longer. 15 s worked well.
@@ -92,7 +94,7 @@ About `UC_GRACE`: in real use, drops that recover on their own did so in 1 to 14
 ./uninstall.sh
 ```
 
-This removes the LaunchAgent and the script. It keeps the logs.
+This removes the LaunchAgent, the script and the notification helper. It keeps the logs.
 
 ## How it works
 
@@ -138,7 +140,7 @@ After the fix, the Wi-Fi peer-to-peer link (AWDL) between the Macs comes back wi
 | FR-4 | While still down, retry with backoff: 60 s, 120 s, 300 s, then every 600 s. |
 | FR-5 | Reset the retry counter once UC reports a connected peer. |
 | FR-6 | Log start, drop, fix and reconnection events with timestamps, and cap the log near 1 MB. |
-| FR-7 | Optionally show a macOS notification on each fix (`UC_NOTIFY`). |
+| FR-7 | Optionally show a macOS notification on the first fix of an outage and once more when retries slow to every 10 min (`UC_NOTIFY`), with the UC Watchdog icon when the helper could be built. |
 | FR-8 | Start at login and restart automatically if the process or the log stream dies. |
 | FR-9 | Run as the logged-in user: no root, no third-party dependencies, only the tools that ship with macOS (bash 3.2). |
 | FR-10 | Install and uninstall with a single command each. |
@@ -176,7 +178,7 @@ captured while a disconnect happens.
 
 **Does it use battery or CPU?** Almost none. It waits on `log stream` and wakes every 5 s only to check a timer.
 
-**Will it keep restarting things while my MacBook is closed?** Only with backoff, at most once every 10 minutes once the retries are used up. It does nothing while UC is connected.
+**Will it keep restarting things while my MacBook is closed or off?** Only with backoff, at most once every 10 minutes once the retries are used up, and without more notifications. It does nothing while UC is connected.
 
 **Does it fix Sidecar or AirDrop?** It is built and tested for Universal Control only. Restarting `sharingd` can also wake up AirDrop and Handoff, but that is a side effect.
 
