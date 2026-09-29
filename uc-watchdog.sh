@@ -10,7 +10,7 @@
 # Runs as a per-user LaunchAgent (see install.sh). Needs no root.
 # https://github.com/diegonzn/apple-universal-control-fix
 
-GRACE=${UC_GRACE:-15}
+GRACE=${UC_GRACE:-5}
 NOTIFY=${UC_NOTIFY:-1}
 LOG=${UC_LOG:-"$HOME/Library/Logs/uc-watchdog.log"}
 BACKOFF=(60 120 300 600)

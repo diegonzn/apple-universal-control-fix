@@ -25,7 +25,7 @@ Restarting those two daemons by hand works, but you have to notice the drop, ope
 
 - Follows the `UniversalControl` log live (`log stream`, category `CONN`). It does not poll and uses almost no CPU while idle.
 - When the connection list goes empty, it starts a timer.
-- If UC reconnects on its own within the **grace period** (15 s by default), it does nothing.
+- If UC reconnects on its own within the **grace period** (5 s by default), it does nothing.
 - If not, it restarts `rapportd` and `sharingd` and shows a notification.
 - If the link is still down, it retries after **1, 2, 5 and then every 10 minutes**, so it does not hammer the system while the other Mac is asleep or away. Retries are silent: you get one notification when the link drops and one more if the other Mac still has not answered after about 8 minutes (usually because it is off or asleep).
 - It logs every drop, fix and reconnection with timestamps to `~/Library/Logs/uc-watchdog.log`.
@@ -60,9 +60,9 @@ tail -f ~/Library/Logs/uc-watchdog.log
 Example output:
 
 ```
-2026-09-28 10:54:56 start (grace=15s, pid 46377)
+2026-09-28 10:54:56 start (grace=5s, pid 46377)
 2026-09-28 12:46:44 down
-2026-09-28 12:47:00 fix #1 (down for 16s)
+2026-09-28 12:46:49 fix #1 (down for 5s)
 2026-09-28 12:47:25 reconnected after 41s
 2026-09-28 14:22:49 down
 2026-09-28 14:22:51 reconnected after 2s
@@ -89,11 +89,11 @@ Edit the `EnvironmentVariables` block in `uc-watchdog.plist`, then run `./instal
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `UC_GRACE` | `15` | Seconds to wait for UC to recover on its own before restarting the daemons |
+| `UC_GRACE` | `5` | Seconds to wait for UC to recover on its own before restarting the daemons |
 | `UC_NOTIFY` | `1` | `1` notifies when the link drops and once more if it stays down, `0` stays silent |
 | `UC_LOG` | `~/Library/Logs/uc-watchdog.log` | Log file path |
 
-About `UC_GRACE`: in real use, drops that recover on their own did so in 1 to 14 s. A lower value restarts daemons that did not need it; a higher one makes every real drop last longer. 15 s worked well.
+About `UC_GRACE`: in real use, only 5 of 21 drops recovered on their own (in 1, 1, 2, 9 and 14 s); the other 16 needed the fix anyway. By the time UC reports the drop it has already missed the other Mac's BLE advertisements for 45 s, so waiting longer rarely pays off: each second of grace is added to almost every real drop. 5 s still covers the quick self-recoveries, and restarting the daemons while the link is already down does no harm. Raise it if you see `fix` lines for drops that would have recovered on their own.
 
 ## Uninstall
 
@@ -157,8 +157,8 @@ After the fix, the Wi-Fi peer-to-peer link (AWDL) between the Macs comes back wi
 | ID | Given / When / Then |
 |---|---|
 | AC-1 | **Given** the watchdog is installed, **when** the user logs in, **then** `launchctl print gui/$(id -u)/local.uc-watchdog` shows `state = running` and the log shows `start`. |
-| AC-2 | **Given** UC is connected, **when** the peer drops and comes back within 15 s, **then** the log shows `down` and `reconnected`, and no `fix`. |
-| AC-3 | **Given** UC is connected, **when** the peer stays down for 15 s, **then** the log shows `fix #1` and `rapportd` and `sharingd` get new PIDs. |
+| AC-2 | **Given** UC is connected, **when** the peer drops and comes back within 5 s, **then** the log shows `down` and `reconnected`, and no `fix`. |
+| AC-3 | **Given** UC is connected, **when** the peer stays down for 5 s, **then** the log shows `fix #1` and `rapportd` and `sharingd` get new PIDs. |
 | AC-4 | **Given** the fix did not bring UC back, **when** the peer stays down, **then** fixes #2, #3 and #4 happen about 1, 2 and 5 min after the previous one, and later ones every 10 min. |
 | AC-5 | **Given** a fix happened, **when** UC reconnects, **then** the log shows `reconnected after Ns` and the next drop starts again from `fix #1`. |
 | AC-6 | **Given** the `log stream` process is killed, **when** the watchdog notices (within 5 s), **then** it exits and launchd starts a new instance within 30 s. |
