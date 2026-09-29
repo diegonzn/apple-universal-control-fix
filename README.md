@@ -66,9 +66,16 @@ Example output:
 2026-09-28 12:47:25 reconnected after 41s
 2026-09-28 14:22:49 down
 2026-09-28 14:22:51 reconnected after 2s
+2026-09-29 09:46:44 bounce: other Mac rejected the pointer, it came back
 ```
 
 The second drop recovered on its own in 2 s, so the watchdog left it alone.
+
+A `bounce` line means the pointer crossed to the other Mac but that Mac refused it (UC logs `TargetReply status=2 ... REJECTED`), so it jumped back to this screen. The link itself stays up, so the watchdog does not act on it; the line is there so you can match it to what you saw. The reason for the refusal is only logged on the other Mac. To see it, run this there while you reproduce the bounce:
+
+```bash
+/usr/bin/log stream --style compact --predicate 'process == "UniversalControl" AND category IN {"EVNT","CONN"}'
+```
 
 Check that it is running:
 

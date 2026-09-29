@@ -52,7 +52,7 @@ fix() {
 FIFO=$(mktemp -u "${TMPDIR:-/tmp}/uc-watchdog.XXXXXX")
 mkfifo "$FIFO"
 /usr/bin/log stream --style compact \
-    --predicate 'process == "UniversalControl" AND category == "CONN"' > "$FIFO" &
+    --predicate 'process == "UniversalControl" AND (category == "CONN" OR (category == "EVNT" AND eventMessage CONTAINS "REJECTED"))' > "$FIFO" &
 STREAM=$!
 exec 3< "$FIFO"
 rm -f "$FIFO"
@@ -69,6 +69,10 @@ while :; do
             *"update connections:"*"-> ["*"(connected)]")
                 [ "$state" = down ] && log "reconnected after $(($(date +%s) - down_since))s"
                 state=up; tries=0 ;;
+            # The pointer crossed over but the other Mac refused it, so it
+            # snapped back to this screen. Not a drop; logged for diagnosis.
+            *"=== REJECTED ==="*)
+                log "bounce: other Mac rejected the pointer, it came back" ;;
         esac
     elif ! kill -0 $STREAM 2>/dev/null; then
         log "log stream ended, exiting so launchd restarts us"; exit 1
