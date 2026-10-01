@@ -28,6 +28,7 @@ Restarting those two daemons by hand works, but you have to notice the drop, ope
 - If UC reconnects on its own within the **grace period** (5 s by default), it does nothing.
 - If not, it restarts `rapportd` and shows a notification. `sharingd` is left alone on this first try, because restarting it also breaks Handoff and Universal Clipboard for several minutes (see [Why sharingd is restarted last](#why-sharingd-is-restarted-last)).
 - If the link is still down 20 s later, it restarts `rapportd` **and** `sharingd`, then retries after **1, 2, 5 and then every 10 minutes**, so it does not hammer the system while the other Mac is asleep or away. Retries are silent: you get one notification when the link drops and one more if the other Mac still has not answered after about 8 minutes (usually because it is off or asleep).
+- If UC is already reconnecting (`pending` or `connecting`) when a fix comes due, the fix waits up to 10 s, because restarting `rapportd` in the middle of the handshake severs it and makes the outage longer.
 - It also watches for two problems where the link stays up but UC gets slow or refuses to cross, and restarts `UniversalControl` when they show up (see [Link storms and memory](#link-storms-and-memory)).
 - It logs every drop, fix and reconnection with timestamps to `~/Library/Logs/uc-watchdog.log`.
 - launchd starts it at login and restarts it if it ever exits.
@@ -167,6 +168,7 @@ After the fix, the Wi-Fi peer-to-peer link (AWDL) between the Macs comes back wi
 | FR-2 | Take no action if UC reconnects on its own within `UC_GRACE` seconds. |
 | FR-3 | After `UC_GRACE` seconds down, restart `rapportd` only. If still down 20 s later, restart `rapportd` and `sharingd`. |
 | FR-4 | While still down, keep retrying with backoff: 60 s, 120 s, 300 s, then every 600 s. |
+| FR-13 | Hold any fix for 10 s after UC logs a `pending` or `connecting` peer, so a fix never severs a reconnection in progress. |
 | FR-11 | Count rapport link activations per minute; above `UC_STORM_MAX`, restart `rapportd` and `UniversalControl`, at most once every 10 min. |
 | FR-12 | Check `UniversalControl` memory once a minute; above `UC_MEM_MAX` MB, restart it, at most once every 10 min. |
 | FR-5 | Reset the retry counter once UC reports a connected peer. |
@@ -184,6 +186,7 @@ After the fix, the Wi-Fi peer-to-peer link (AWDL) between the Macs comes back wi
 | AC-2 | **Given** UC is connected, **when** the peer drops and comes back within 5 s, **then** the log shows `down` and `reconnected`, and no `fix`. |
 | AC-3 | **Given** UC is connected, **when** the peer stays down for 5 s, **then** the log shows `fix #1 (rapportd, ...)`, `rapportd` gets a new PID and `sharingd` keeps its PID. |
 | AC-4 | **Given** fix #1 did not bring UC back, **when** the peer stays down, **then** fix #2 happens about 20 s later and restarts `rapportd` and `sharingd`; fixes #3, #4 and #5 follow about 1, 2 and 5 min after the previous one, and later ones every 10 min. |
+| AC-10 | **Given** a fix is due, **when** UC logs a `pending` or `connecting` peer and connects within 10 s, **then** the log shows `reconnected` and no further `fix`; if it does not connect, the fix happens 10 s after that line. |
 | AC-8 | **Given** UC is connected, **when** `UniversalControl` logs more than `UC_STORM_MAX` `Activated: CLinkClient` lines within a minute, **then** the log shows `restart UniversalControl: link storm, ...`, `UniversalControl` and `rapportd` get new PIDs, and this does not repeat within 10 min. |
 | AC-9 | **Given** UC is connected, **when** `UniversalControl` uses more than `UC_MEM_MAX` MB, **then** the log shows `restart UniversalControl: memory ...` and the new process uses under 50 MB. |
 | AC-5 | **Given** a fix happened, **when** UC reconnects, **then** the log shows `reconnected after Ns` and the next drop starts again from `fix #1`. |

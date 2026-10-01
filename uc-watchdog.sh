@@ -9,7 +9,8 @@
 #    retries with growing waits (1, 2, 5, 10 min) so it does not hammer the
 #    system while the other Mac is asleep. sharingd is left alone on the
 #    first try because restarting it also breaks Handoff and Universal
-#    Clipboard for several minutes.
+#    Clipboard for several minutes. A fix that comes due while UC is already
+#    reconnecting waits HOLD seconds, so it never severs a handshake.
 #
 # 2. A "link storm": UniversalControl activates hundreds of rapport links
 #    per minute, usually because another Mac on the same Apple ID is nearby
@@ -28,9 +29,10 @@ LOG=${UC_LOG:-"$HOME/Library/Logs/uc-watchdog.log"}
 STORM_MAX=${UC_STORM_MAX:-60}   # link activations per minute that count as a storm
 MEM_MAX=${UC_MEM_MAX:-200}      # MB of UniversalControl memory that trigger a restart
 BACKOFF=(20 60 120 300 600)     # seconds to wait after fix #1, #2, #3, #4, #5+
+HOLD=10                         # seconds a fix waits while UC is mid-handshake
 UC_JOB="gui/$(id -u)/com.apple.ensemble"   # launchd job that runs UniversalControl
 
-state=unknown; down_since=0; last_fix=0; tries=0
+state=unknown; down_since=0; last_fix=0; tries=0; connecting_at=-9999
 acts=0; win_start=$SECONDS; last_uc_restart=-9999; uc_pending=0
 
 log() { echo "$(date '+%F %T') $*" >> "$LOG"; }
@@ -105,12 +107,18 @@ while :; do
     if IFS= read -r -t 5 line <&3; then
         case "$line" in
             *"update connections:"*"-> []")
+                connecting_at=-9999
                 if [ "$state" != down ]; then
                     state=down; down_since=$SECONDS; log "down"
                 fi ;;
             *"update connections:"*"-> ["*"(connected)]")
                 [ "$state" = down ] && log "reconnected after $((SECONDS - down_since))s"
                 state=up; tries=0; uc_pending=0 ;;
+            # UC found the other Mac again and is reconnecting. This very line
+            # wakes the loop, so without the hold a fix that is already due
+            # would kill rapportd in the middle of the handshake.
+            *"update connections:"*"-> ["*"(pending)]"|*"update connections:"*"-> ["*"(connecting)]")
+                connecting_at=$SECONDS ;;
             # The pointer crossed over but the other Mac refused it, so it
             # snapped back to this screen. Not a drop; logged for diagnosis.
             *"=== REJECTED ==="*)
@@ -147,7 +155,7 @@ while :; do
         log "down (no reconnect within 120s after restarting UniversalControl)"
     fi
 
-    if [ "$state" = down ]; then
+    if [ "$state" = down ] && [ $((now - connecting_at)) -ge $HOLD ]; then
         if [ $tries -eq 0 ]; then
             [ $((now - down_since)) -ge $GRACE ] && fix
         else
