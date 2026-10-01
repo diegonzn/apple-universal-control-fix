@@ -15,6 +15,10 @@
         <string>5</string>
         <key>UC_NOTIFY</key>
         <string>1</string>
+        <key>UC_STORM_MAX</key>
+        <string>60</string>
+        <key>UC_MEM_MAX</key>
+        <string>200</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>
