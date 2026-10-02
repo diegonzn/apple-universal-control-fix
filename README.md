@@ -26,10 +26,11 @@ Restarting those two daemons by hand works, but you have to notice the drop, ope
 - Follows the `UniversalControl` log live (`log stream`). It does not poll and uses almost no CPU while idle.
 - When the connection list goes empty, it starts a timer.
 - If UC reconnects on its own within the **grace period** (5 s by default), it does nothing.
-- If not, it restarts `rapportd` and shows a notification. `sharingd` is left alone on this first try, because restarting it also breaks Handoff and Universal Clipboard for several minutes (see [Why sharingd is restarted last](#why-sharingd-is-restarted-last)).
+- If not, it restarts `rapportd` and shows a notification. `sharingd` is left alone on this first try, because restarting it can break Handoff and Universal Clipboard (see [Why sharingd is restarted last](#why-sharingd-is-restarted-last)).
 - If the link is still down 20 s later, it restarts `rapportd` **and** `sharingd`, then retries after **1, 2, 5 and then every 10 minutes**, so it does not hammer the system while the other Mac is asleep or away. Retries are silent: you get one notification when the link drops and one more if the other Mac still has not answered after about 8 minutes (usually because it is off or asleep).
 - If UC is already reconnecting (`pending` or `connecting`) when a fix comes due, the fix waits up to 10 s, because restarting `rapportd` in the middle of the handshake severs it and makes the outage longer.
 - It also watches for two problems where the link stays up but UC gets slow or refuses to cross, and restarts `UniversalControl` when they show up (see [Link storms and memory](#link-storms-and-memory)).
+- If copy and paste between the Macs gets stuck after a `sharingd` restart, it restarts `sharingd` once more, which unsticks it (see [Universal Clipboard stuck after a sharingd restart](#universal-clipboard-stuck-after-a-sharingd-restart)).
 - It logs every drop, fix and reconnection with timestamps to `~/Library/Logs/uc-watchdog.log`.
 - launchd starts it at login and restarts it if it ever exits.
 
@@ -71,6 +72,7 @@ Example output:
 2026-09-29 09:46:44 bounce: other Mac rejected the pointer, it came back
 2026-09-29 20:27:31 restart UniversalControl: link storm, 7670 link activations in 60s
 2026-09-29 22:40:12 restart UniversalControl: memory 721 MB (limit 200 MB)
+2026-10-02 12:32:10 restart sharingd: Universal Clipboard stuck, 3 Handoff key requests failed
 ```
 
 The second drop recovered on its own in 2 s, so the watchdog left it alone. A `fix #2` line reads `(rapportd+sharingd, ...)`: the first restart was not enough.
@@ -122,7 +124,15 @@ Fix #1 is `killall rapportd`. Fix #2 and later are `killall rapportd sharingd`. 
 
 ### Why sharingd is restarted last
 
-`sharingd` is not only part of Universal Control: it also runs Handoff, AirDrop and Universal Clipboard. Every time it restarts, the other Mac has to ask it again for the Handoff encryption key. Twice in one day that exchange failed for about 10 minutes (`sharingd` answered `Not wrapping key as wrapping key is unavailable` to 10 to 20 requests per minute), and during those minutes copy and paste between the Macs did not work at all. Restarting `rapportd` alone does not have that side effect, so the watchdog tries that first and only adds `sharingd` if the link is still down 20 s later.
+`sharingd` is not only part of Universal Control: it also runs Handoff, AirDrop and Universal Clipboard, and a restart can leave copy and paste between the Macs broken (see the next section). Restarting `rapportd` alone does not have that side effect, so the watchdog tries that first and only adds `sharingd` if the link is still down 20 s later.
+
+### Universal Clipboard stuck after a sharingd restart
+
+`sharingd` encrypts its Handoff and clipboard advertisements with a key and a counter that only goes up. It bumps the counter by 25 to 50 each time the Bluetooth address rotates (`Bumped advertising encryption key counter value from 53482 to 53530`), but after a restart it can resume from a lower value than the one it was using (`lastUsedCounter:53500` in the state it dumps at start). The other Mac then keeps asking for the key, about 3 to 20 times a minute, and `sharingd` answers every time with `Not wrapping key as wrapping key is unavailable`. Copy and paste stays broken until the counter passes the old value again.
+
+This happened four times in three days on the 2013 iMac. Each time the restart had loaded a counter 14 to 154 below the last bumped value, and the failures went on for up to 22 minutes. Three of the four ended at the moment the counter caught up: twice with the next address rotation, once with another `sharingd` restart, because every start loads a counter 100 or more above the previous start. No run of failures followed a restart that loaded a counter above the last bumped value. That the other Mac ignores advertisements with an old counter is an inference; its side of the exchange was not captured.
+
+So the watchdog follows that `sharingd` log line too. Three failed key requests within 2 minutes make it restart `sharingd`, logged as `restart sharingd: Universal Clipboard stuck, ...`. It does this at most twice in 10 minutes; the second restart is for a counter that was more than 100 behind. It does not matter who restarted `sharingd` first: the watchdog, a crash or a login.
 
 ### Link storms and memory
 
@@ -171,6 +181,7 @@ After the fix, the Wi-Fi peer-to-peer link (AWDL) between the Macs comes back wi
 | FR-13 | Hold any fix for 10 s after UC logs a `pending` or `connecting` peer, so a fix never severs a reconnection in progress. |
 | FR-11 | Count rapport link activations per minute; above `UC_STORM_MAX`, restart `rapportd` and `UniversalControl`, at most once every 10 min. |
 | FR-12 | Check `UniversalControl` memory once a minute; above `UC_MEM_MAX` MB, restart it, at most once every 10 min. |
+| FR-14 | Count `sharingd`'s failed Handoff key requests; at 3 within 2 min, restart `sharingd`, at most twice every 10 min. |
 | FR-5 | Reset the retry counter once UC reports a connected peer. |
 | FR-6 | Log start, drop, fix and reconnection events with timestamps, and cap the log near 1 MB. |
 | FR-7 | Optionally show a macOS notification on the first fix of an outage and once more when retries slow to every 10 min (`UC_NOTIFY`), with the UC Watchdog icon when the helper could be built. |
@@ -189,6 +200,7 @@ After the fix, the Wi-Fi peer-to-peer link (AWDL) between the Macs comes back wi
 | AC-10 | **Given** a fix is due, **when** UC logs a `pending` or `connecting` peer and connects within 10 s, **then** the log shows `reconnected` and no further `fix`; if it does not connect, the fix happens 10 s after that line. |
 | AC-8 | **Given** UC is connected, **when** `UniversalControl` logs more than `UC_STORM_MAX` `Activated: CLinkClient` lines within a minute, **then** the log shows `restart UniversalControl: link storm, ...`, `UniversalControl` and `rapportd` get new PIDs, and this does not repeat within 10 min. |
 | AC-9 | **Given** UC is connected, **when** `UniversalControl` uses more than `UC_MEM_MAX` MB, **then** the log shows `restart UniversalControl: memory ...` and the new process uses under 50 MB. |
+| AC-11 | **Given** `sharingd` logs `Not wrapping key as wrapping key is unavailable` 3 times within 2 min, **when** the third line arrives, **then** the log shows `restart sharingd: Universal Clipboard stuck, ...` and `sharingd` gets a new PID; this happens at most twice within 10 min. |
 | AC-5 | **Given** a fix happened, **when** UC reconnects, **then** the log shows `reconnected after Ns` and the next drop starts again from `fix #1`. |
 | AC-6 | **Given** the `log stream` process is killed, **when** the watchdog notices (within 5 s), **then** it exits and launchd starts a new instance within 30 s. |
 | AC-7 | **Given** the watchdog is installed, **when** the user runs `./uninstall.sh`, **then** the agent is no longer loaded and its plist and script are gone. |
@@ -218,7 +230,7 @@ captured while a disconnect happens.
 
 **Does it fix Sidecar or AirDrop?** It is built and tested for Universal Control only. Restarting `sharingd` can also wake up AirDrop and Handoff, but that is a side effect, and it is the reason `sharingd` is only restarted when restarting `rapportd` alone was not enough.
 
-**Copy and paste between the Macs stopped working right after a fix.** That is the Handoff key exchange restarting after `sharingd` was killed. It came back on its own within about 10 minutes both times it was observed. Since fix #1 no longer touches `sharingd`, it should be rare; if it still happens, do not restart anything, just wait.
+**Copy and paste between the Macs stopped working right after a fix.** `sharingd` came back with a Handoff key counter lower than the one it was using (see [Universal Clipboard stuck after a sharingd restart](#universal-clipboard-stuck-after-a-sharingd-restart)). The watchdog notices it once the other Mac has asked for the key three times, usually within a minute of your first copy, and restarts `sharingd` to unstick it; look for a `restart sharingd` line in the log. To do it by hand: `killall sharingd`.
 
 ## License
 

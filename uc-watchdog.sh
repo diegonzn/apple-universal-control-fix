@@ -20,6 +20,14 @@
 # 3. UniversalControl bloated beyond UC_MEM_MAX MB (it leaks link objects
 #    during storms and gets slow). Fix: restart UniversalControl.
 #
+# 4. Universal Clipboard stuck after a sharingd restart. sharingd can come
+#    back with a Handoff key counter lower than the one it was already
+#    using. The other Mac then keeps asking for the key, sharingd answers
+#    "Not wrapping key as wrapping key is unavailable", and copy and paste
+#    stays broken until the counter catches up, which can take 15 min or
+#    more. Fix: restart sharingd once more; each start moves the counter
+#    100 or more ahead.
+#
 # Runs as a per-user LaunchAgent (see install.sh). Needs no root.
 # https://github.com/diegonzn/apple-universal-control-fix
 
@@ -30,10 +38,12 @@ STORM_MAX=${UC_STORM_MAX:-60}   # link activations per minute that count as a st
 MEM_MAX=${UC_MEM_MAX:-200}      # MB of UniversalControl memory that trigger a restart
 BACKOFF=(20 60 120 300 600)     # seconds to wait after fix #1, #2, #3, #4, #5+
 HOLD=10                         # seconds a fix waits while UC is mid-handshake
+KEY_MAX=3                       # failed Handoff key requests in 2 min that mean a stuck clipboard
 UC_JOB="gui/$(id -u)/com.apple.ensemble"   # launchd job that runs UniversalControl
 
 state=unknown; down_since=0; last_fix=0; tries=0; connecting_at=-9999
 acts=0; win_start=$SECONDS; last_uc_restart=-9999; uc_pending=0
+key_fails=0; key_first=-9999; key_fix_last=-9999; key_fix_prev=-9999
 
 log() { echo "$(date '+%F %T') $*" >> "$LOG"; }
 
@@ -96,7 +106,7 @@ uc_mem() {
 FIFO=$(mktemp -u "${TMPDIR:-/tmp}/uc-watchdog.XXXXXX")
 mkfifo "$FIFO"
 /usr/bin/log stream --style compact \
-    --predicate 'process == "UniversalControl" AND (category == "CONN" OR (category == "EVNT" AND eventMessage CONTAINS "REJECTED") OR (category == "CLinkClient" AND eventMessage BEGINSWITH "Activated: CLinkClient"))' > "$FIFO" &
+    --predicate '(process == "UniversalControl" AND (category == "CONN" OR (category == "EVNT" AND eventMessage CONTAINS "REJECTED") OR (category == "CLinkClient" AND eventMessage BEGINSWITH "Activated: CLinkClient"))) OR (process == "sharingd" AND category == "Handoff" AND eventMessage BEGINSWITH "Not wrapping key")' > "$FIFO" &
 STREAM=$!
 exec 3< "$FIFO"
 rm -f "$FIFO"
@@ -126,12 +136,29 @@ while :; do
             # One rapport link activation. A few per minute is normal.
             *"Activated: CLinkClient"*)
                 acts=$((acts + 1)) ;;
+            # sharingd could not give its Handoff key to the other Mac. One
+            # now and then is harmless; counted over a 2 min window.
+            *"Not wrapping key"*)
+                if [ $((SECONDS - key_first)) -gt 120 ]; then
+                    key_fails=0; key_first=$SECONDS
+                fi
+                key_fails=$((key_fails + 1)) ;;
         esac
     elif ! kill -0 $STREAM 2>/dev/null; then
         log "log stream ended, exiting so launchd restarts us"; exit 1
     fi
 
     now=$SECONDS
+
+    # Universal Clipboard stuck: restart sharingd so its key counter jumps
+    # ahead of what the other Mac has seen. At most twice per 10 min; the
+    # second restart is for a counter that was more than 100 behind.
+    if [ $key_fails -ge $KEY_MAX ] && [ $((now - key_fix_prev)) -ge 600 ]; then
+        killall sharingd 2>/dev/null
+        key_fix_prev=$key_fix_last; key_fix_last=$now; key_fails=0
+        log "restart sharingd: Universal Clipboard stuck, $KEY_MAX Handoff key requests failed"
+        notify "Copy and paste between the Macs was stuck. Restarting sharingd."
+    fi
 
     # Link storm and memory checks, once a minute.
     if [ $((now - win_start)) -ge 60 ]; then
